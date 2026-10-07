@@ -1,12 +1,18 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 class Mutex {
     tail = Promise.resolve();
+    holder = new AsyncLocalStorage();
     async runExclusive(work) {
+        // Reentrant: a service that itself opens a transaction may legitimately be
+        // called from within an outer transaction (e.g. SyncService -> AliquotService).
+        if (this.holder.getStore())
+            return work();
         const previous = this.tail;
         let release;
         this.tail = new Promise((resolve) => { release = resolve; });
         await previous;
         try {
-            return await work();
+            return await this.holder.run(true, work);
         }
         finally {
             release();
@@ -19,6 +25,7 @@ export class Store {
     transfers = new Map();
     receiving = new Map();
     aliquots = new Map();
+    aliquotOperations = new Map();
     batches = new Map();
     runs = new Map();
     results = new Map();
@@ -53,6 +60,7 @@ export class Store {
             transfers: structuredClone([...this.transfers.values()]),
             receiving: structuredClone([...this.receiving.values()]),
             aliquots: structuredClone([...this.aliquots.values()]),
+            aliquotOperations: structuredClone([...this.aliquotOperations.values()]),
             batches: structuredClone([...this.batches.values()]),
             runs: structuredClone([...this.runs.values()]),
             results: structuredClone([...this.results.values()]),
@@ -71,6 +79,7 @@ export class Store {
         this.replaceMap(this.transfers, snapshot.transfers);
         this.replaceMap(this.receiving, snapshot.receiving);
         this.replaceMap(this.aliquots, snapshot.aliquots);
+        this.replaceMap(this.aliquotOperations, snapshot.aliquotOperations, (value) => `${value.tenantId}|${value.projectId}|${value.operationId}`);
         this.replaceMap(this.batches, snapshot.batches);
         this.replaceMap(this.runs, snapshot.runs);
         this.replaceMap(this.results, snapshot.results);

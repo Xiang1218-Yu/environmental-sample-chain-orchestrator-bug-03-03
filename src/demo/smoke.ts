@@ -36,7 +36,7 @@ const transfer = app.custody.handOver({
 app.custody.confirmReceipt(transfer.id, { receiverId: 'courier_01', receivedAt: '2026-10-06T10:00:00.000Z', temperatureCelsius: 5, sealStatus: 'INTACT' });
 app.receiving.receive({ tenantId, projectId, containerId: sealed.container.id, receivedBy: 'lab_receiver_01', receivedAt: '2026-10-06T10:15:00.000Z', temperatureCelsius: 5, sealStatus: 'INTACT', decision: 'ACCEPTED', clientOperationId: 'receive-001' });
 
-const aliquots = app.aliquots.createMany({ tenantId, projectId, parentContainerId: sealed.container.id, protocolVersion: 'water-v3', createdBy: 'analyst_01', operationId: 'aliquot-001', items: [{ barcode: 'ALQ-001', volumeMl: 20, unit: 'ML' }, { barcode: 'ALQ-002', volumeMl: 20, unit: 'ML' }] });
+const aliquots = await app.aliquots.createMany({ tenantId, projectId, parentContainerId: sealed.container.id, protocolVersion: 'water-v3', createdBy: 'analyst_01', operationId: 'aliquot-001', items: [{ barcode: 'ALQ-001', volumeMl: 20, unit: 'ML' }, { barcode: 'ALQ-002', volumeMl: 20, unit: 'ML' }] });
 const batch = app.batches.create({ tenantId, projectId, protocolVersion: 'water-v3', instrumentType: 'ICP-MS', requiredControls: [{ kind: 'BLANK', minimumCount: 1 }], createdBy: 'analyst_01' });
 for (const aliquot of aliquots) app.batches.addAliquot(batch.id, aliquot.id);
 app.batches.markReady(batch.id);

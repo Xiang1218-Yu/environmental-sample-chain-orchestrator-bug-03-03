@@ -108,6 +108,20 @@ export interface Aliquot extends Versioned {
   sourceOperationId: string;
 }
 
+export interface AliquotOperation extends Versioned {
+  id: string;
+  tenantId: TenantId;
+  projectId: ProjectId;
+  operationId: string;
+  parentContainerId: ContainerId;
+  fingerprint: string;
+  aliquotIds: AliquotId[];
+  totalVolumeMl: number;
+  createdBy: UserId;
+  createdAt: string;
+  status: 'COMPLETED';
+}
+
 export interface AnalysisBatch extends Versioned {
   id: BatchId;
   tenantId: TenantId;

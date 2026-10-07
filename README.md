@@ -23,6 +23,9 @@
 npm install
 npm run build
 npm run smoke
+npm test
 ```
+
+批量分装（`AliquotService.createMany`）在单个 Store 事务内原子提交：全部校验（条码冲突、容量、单位、隔离状态、归属范围）通过后才一次性写入子样、扣减父容器容量和操作记录；失败整体回滚，不残留子样也不扣量。重复操作以 `tenantId|projectId|operationId` 为幂等键：相同请求（0.25 L 与 250 mL 视为同一请求）返回既有结果，同 operationId 提交不同内容返回 `aliquot.operation_replay_conflict`，旧版非原子实现遗留的半成品返回 `aliquot.operation_recovery_required`。并发分装由可重入互斥锁串行化。
 
 当前源码是**干净基线**，没有为了出题主动埋入 Bug。后续应先在这份基线上补充测试和复现证据，再从真实缺陷中生成 Bug 题目。

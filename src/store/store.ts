@@ -1,18 +1,23 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
-  Aliquot, AnalysisBatch, AuditRecord, CustodyTransfer, EvidencePackage, FileRecord, InstrumentRun, OutboxMessage,
+  Aliquot, AliquotOperation, AnalysisBatch, AuditRecord, CustodyTransfer, EvidencePackage, FileRecord, InstrumentRun, OutboxMessage,
   QualityDecision, ReceivingRecord, ResultRevision, SampleContainer, SamplingRecord, SyncRecord,
 } from '../domain/types.js';
 
 class Mutex {
   private tail = Promise.resolve();
+  private readonly holder = new AsyncLocalStorage<true>();
 
   async runExclusive<T>(work: () => Promise<T> | T): Promise<T> {
+    // Reentrant: a service that itself opens a transaction may legitimately be
+    // called from within an outer transaction (e.g. SyncService -> AliquotService).
+    if (this.holder.getStore()) return work();
     const previous = this.tail;
     let release!: () => void;
     this.tail = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
-      return await work();
+      return await this.holder.run(true, work);
     } finally {
       release();
     }
@@ -26,6 +31,7 @@ type Snapshot = {
   transfers: CustodyTransfer[];
   receiving: ReceivingRecord[];
   aliquots: Aliquot[];
+  aliquotOperations: AliquotOperation[];
   batches: AnalysisBatch[];
   runs: InstrumentRun[];
   results: ResultRevision[];
@@ -43,6 +49,7 @@ export class Store {
   readonly transfers = new Map<string, CustodyTransfer>();
   readonly receiving = new Map<string, ReceivingRecord>();
   readonly aliquots = new Map<string, Aliquot>();
+  readonly aliquotOperations = new Map<string, AliquotOperation>();
   readonly batches = new Map<string, AnalysisBatch>();
   readonly runs = new Map<string, InstrumentRun>();
   readonly results = new Map<string, ResultRevision>();
@@ -82,6 +89,7 @@ export class Store {
       transfers: structuredClone([...this.transfers.values()]),
       receiving: structuredClone([...this.receiving.values()]),
       aliquots: structuredClone([...this.aliquots.values()]),
+      aliquotOperations: structuredClone([...this.aliquotOperations.values()]),
       batches: structuredClone([...this.batches.values()]),
       runs: structuredClone([...this.runs.values()]),
       results: structuredClone([...this.results.values()]),
@@ -101,6 +109,7 @@ export class Store {
     this.replaceMap(this.transfers, snapshot.transfers);
     this.replaceMap(this.receiving, snapshot.receiving);
     this.replaceMap(this.aliquots, snapshot.aliquots);
+    this.replaceMap(this.aliquotOperations, snapshot.aliquotOperations, (value) => `${value.tenantId}|${value.projectId}|${value.operationId}`);
     this.replaceMap(this.batches, snapshot.batches);
     this.replaceMap(this.runs, snapshot.runs);
     this.replaceMap(this.results, snapshot.results);
