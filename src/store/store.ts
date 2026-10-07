@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
   Aliquot, AnalysisBatch, AuditRecord, CustodyTransfer, EvidencePackage, FileRecord, InstrumentRun, OutboxMessage,
   QualityDecision, ReceivingRecord, ResultRevision, SampleContainer, SamplingRecord, SyncRecord,
@@ -53,6 +54,7 @@ export class Store {
   readonly outbox: OutboxMessage[] = [];
   readonly files = new Map<string, FileRecord>();
   readonly lock = new Mutex();
+  private readonly transactionDepth = new AsyncLocalStorage<number>();
   private sequence = 0;
 
   now(): string { return new Date().toISOString(); }
@@ -113,7 +115,12 @@ export class Store {
   }
 
   async transaction<T>(work: () => Promise<T> | T): Promise<T> {
-    return this.lock.runExclusive(async () => {
+    if ((this.transactionDepth.getStore() ?? 0) > 0) {
+      // Already inside a transaction on this async context (e.g. sync dispatch
+      // invoking a transactional service): join it instead of deadlocking on the mutex.
+      return work();
+    }
+    return this.lock.runExclusive(() => this.transactionDepth.run(1, async () => {
       const before = this.snapshot();
       try {
         return await work();
@@ -121,7 +128,7 @@ export class Store {
         this.restore(before);
         throw error;
       }
-    });
+    }));
   }
 
   private replaceMap<T>(target: Map<string, T>, values: T[], keyOf: (value: T) => string = (value) => (value as T & { id: string }).id): void {

@@ -10,7 +10,7 @@ export class SyncService {
   constructor(private readonly store: Store, private readonly sampling: SamplingService, private readonly custody: CustodyService, private readonly receiving: ReceivingService, private readonly aliquots: AliquotService) {}
 
   async apply(envelope: SyncEnvelope): Promise<SyncApplyResult> {
-    return this.store.transaction(() => {
+    return this.store.transaction(async () => {
       const key = `${envelope.tenantId}|${envelope.projectId}|${envelope.deviceId}|${envelope.operationId}`;
       const existing = this.store.syncRecords.get(key);
       if (existing) {
@@ -26,13 +26,13 @@ export class SyncService {
         this.record(key, envelope, 'STALE', undefined, 'client sequence is outside the accepted replay window');
         return 'STALE';
       }
-      const resultReference = this.dispatch(envelope);
+      const resultReference = await this.dispatch(envelope);
       this.record(key, envelope, 'APPLIED', resultReference);
       return 'APPLIED';
     });
   }
 
-  private dispatch(envelope: SyncEnvelope): string {
+  private async dispatch(envelope: SyncEnvelope): Promise<string> {
     assertCondition(envelope.projectId.length > 0 && envelope.tenantId.length > 0, 'sync.invalid_scope', 'sync envelope must include tenant and project');
     switch (envelope.type) {
       case 'CREATE_SAMPLE': {
@@ -50,7 +50,8 @@ export class SyncService {
       }
       case 'CREATE_ALIQUOT': {
         const input = envelope.payload as Omit<Parameters<AliquotService['createMany']>[0], 'tenantId' | 'projectId' | 'operationId'>;
-        return this.aliquots.createMany({ ...input, tenantId: envelope.tenantId, projectId: envelope.projectId, operationId: envelope.operationId }).map((item) => item.id).join(',');
+        const created = await this.aliquots.createMany({ ...input, tenantId: envelope.tenantId, projectId: envelope.projectId, operationId: envelope.operationId });
+        return created.map((item) => item.id).join(',');
       }
     }
   }
